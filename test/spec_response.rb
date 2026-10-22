@@ -460,6 +460,45 @@ describe Rack::Response do
     header['content-length'].must_equal '12'
   end
 
+  it "can write after iterating an each-only body" do
+    body = Object.new
+    def body.each
+      yield 'foo'
+    end
+
+    response = Rack::Response.new(body)
+    chunks = []
+    response.each { |part| chunks << part }
+    chunks.must_equal ['foo']
+
+    response.write('bar')
+    _, headers, result = response.finish
+    result.must_equal ['foo', 'bar']
+    headers['content-length'].must_equal '6'
+  end
+
+  it "streams an each-only body and finish-block writes without buffering it first" do
+    events = []
+    body = Object.new
+    body.define_singleton_method(:each) do |&callback|
+      events << :body_start
+      callback.call('foo')
+      events << :body_end
+    end
+
+    response = Rack::Response.new(body)
+    _, headers, result = response.finish { |writer| writer.write('bar') }
+    chunks = []
+    result.each do |part|
+      events << :callback
+      chunks << part
+    end
+
+    chunks.must_equal ['foo', 'bar']
+    events.must_equal [:body_start, :callback, :body_end, :callback]
+    headers['content-length'].must_be_nil
+  end
+
   it "doesn't return invalid responses" do
     r = Rack::Response.new(["foo", "bar"], 204)
     _, header, body = r.finish
