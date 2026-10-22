@@ -129,9 +129,11 @@ module Rack
 
     def each(&callback)
       @body.each(&callback)
-      @buffered = true
 
       if @block
+        # Writes from the finish block go directly to the callback. Outside
+        # that block, leave an each-only body unbuffered so #write can convert it.
+        @buffered = true
         @writer = callback
         @block.call(self)
       end
